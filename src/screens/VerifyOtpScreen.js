@@ -11,10 +11,12 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { COLORS } from "../config/constants";
 import globalStyles from "../globalStyles";
+import { useNavigation } from "@react-navigation/native";
 
-export default function VerifyOtp({ navigation }) {
+export default function VerifyOtp() {
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
   const inputs = useRef([]);
+  const navigation = useNavigation(); // ✅ added navigation hook
 
   const handleChange = (text, index) => {
     if (/^\d*$/.test(text)) {
@@ -39,7 +41,7 @@ export default function VerifyOtp({ navigation }) {
     const enteredOtp = otp.join("");
     if (enteredOtp.length === 6) {
       alert("OTP Verified Successfully 🎉");
-      // navigation.navigate("HomeScreen"); // ✅ Uncomment when ready
+      navigation.replace("HomeScreen"); // ✅ navigate to HomeScreen
     } else {
       alert("Please enter the complete OTP");
     }
@@ -55,7 +57,9 @@ export default function VerifyOtp({ navigation }) {
         <Text style={[globalStyles.titleText, styles.heading]}>
           Enter your OTP
         </Text>
-        <Text style={styles.subText}>We’ve sent a 6-digit code to your number</Text>
+        <Text style={styles.subText}>
+          We’ve sent a 6-digit code to your number
+        </Text>
 
         {/* 🔘 OTP Inputs */}
         <View style={styles.otpContainer}>
@@ -114,30 +118,29 @@ const styles = StyleSheet.create({
 
   /** OTP Boxes */
   otpContainer: {
-  flexDirection: "row",
-  justifyContent: "center", // centers them
-  alignItems: "center",
-  width: "80%",
-  marginBottom: 50,
-},
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    width: "80%",
+    marginBottom: 50,
+  },
 
-otpBox: {
-  width: 50,
-  height: 50,
-  borderRadius: 25,
-  borderWidth: 1.5,
-  borderColor: COLORS.primary,
-  textAlign: "center",
-  fontSize: 18,
-  color: COLORS.primary,
-  backgroundColor: "#fff",
-  shadowColor: "#000",
-  shadowOpacity: 0.05,
-  shadowRadius: 4,
-  elevation: 2,
-  marginHorizontal: 5, // ✅ small gap between circles
-},
-
+  otpBox: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    borderWidth: 1.5,
+    borderColor: COLORS.primary,
+    textAlign: "center",
+    fontSize: 18,
+    color: COLORS.primary,
+    backgroundColor: "#fff",
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+    marginHorizontal: 5,
+  },
 
   /** Button */
   verifyButton: {
