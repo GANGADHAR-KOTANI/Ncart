@@ -17,6 +17,7 @@ import { Picker } from "@react-native-picker/picker";
 import { COLORS } from "../config/constants";
 import { ArrowRight } from "lucide-react-native";
 import { AntDesign } from "@expo/vector-icons";
+import { API_URL } from "../config/constants";
 
 const { height } = Dimensions.get("window");
 
@@ -50,6 +51,37 @@ export default function EnterMobileScreen({ navigation }) {
     };
   }, []);
 
+  // 🔹 Send OTP function
+  const handleSendOtp = async () => {
+    if (mobile.length !== 10) {
+      alert("Please enter a valid 10-digit number");
+      return;
+    }
+
+    try {
+      const res = await fetch(`${API_URL}/api/user/send-otp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: selectedCode + mobile }),
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        
+        const fullPhone = selectedCode + mobile;
+        navigation.navigate("VerifyOtp", { phone: fullPhone });
+
+
+      } else {
+        alert(data.message || "Failed to send OTP");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Network error. Please try again.");
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
@@ -67,76 +99,73 @@ export default function EnterMobileScreen({ navigation }) {
         </Animated.View>
 
         {/* 📱 Bottom Section */}
-        {/* 📱 Bottom Section */}
-<Animated.View
-  style={[
-    styles.bottomSection,
-    {
-      top: Animated.add(imageHeight, new Animated.Value(-height * 0.05)), // 👈 overlap by 5%
-    },
-  ]}
->
-  <Text style={styles.heading}>Enter your mobile number</Text>
+        <Animated.View
+          style={[
+            styles.bottomSection,
+            {
+              top: Animated.add(imageHeight, new Animated.Value(-height * 0.05)), // 👈 overlap by 5%
+            },
+          ]}
+        >
+          <Text style={styles.heading}>Enter your mobile number</Text>
 
-  {/* Country Picker + Input */}
-  <View style={styles.inputRow}>
-    <View style={styles.countryPicker}>
-      <Picker
-        selectedValue={selectedCode}
-        onValueChange={(value) => setSelectedCode(value)}
-        style={styles.picker}
-        dropdownIconColor={COLORS.primary}
-      >
-        <Picker.Item label="+91 🇮🇳" value="+91" />
-        <Picker.Item label="+1 🇺🇸" value="+1" />
-        <Picker.Item label="+44 🇬🇧" value="+44" />
-      </Picker>
-    </View>
+          {/* Country Picker + Input */}
+          <View style={styles.inputRow}>
+            <View style={styles.countryPicker}>
+              <Picker
+                selectedValue={selectedCode}
+                onValueChange={(value) => setSelectedCode(value)}
+                style={styles.picker}
+                dropdownIconColor={COLORS.primary}
+              >
+                <Picker.Item label="+91 🇮🇳" value="+91" />
+                <Picker.Item label="+1 🇺🇸" value="+1" />
+                <Picker.Item label="+44 🇬🇧" value="+44" />
+              </Picker>
+            </View>
 
-    <TextInput
-      style={styles.numberInput}
-      placeholder="Enter number"
-      keyboardType="phone-pad"
-      maxLength={10}
-      value={mobile}
-      onChangeText={(t) => setMobile(t.replace(/\D/g, ""))}
-    />
-  </View>
+            <TextInput
+              style={styles.numberInput}
+              placeholder="Enter number"
+              keyboardType="phone-pad"
+              maxLength={10}
+              value={mobile}
+              onChangeText={(t) => setMobile(t.replace(/\D/g, ""))}
+            />
+          </View>
 
-  {/* Send OTP Button */}
-  <TouchableOpacity
-    style={[
-      styles.sendButton,
-      { opacity: mobile.length === 10 ? 1 : 0.6 },
-    ]}
-    disabled={mobile.length !== 10}
-    onPress={() => navigation.navigate("VerifyOtp")}
-  >
-    <Text style={styles.sendText}>Send OTP</Text>
-    <ArrowRight color={COLORS.white} size={22} />
-  </TouchableOpacity>
+          {/* Send OTP Button */}
+          <TouchableOpacity
+            style={[
+              styles.sendButton,
+              { opacity: mobile.length === 10 ? 1 : 0.6 },
+            ]}
+            disabled={mobile.length !== 10}
+            onPress={handleSendOtp}
+          >
+            <Text style={styles.sendText}>Send OTP</Text>
+            <ArrowRight color={COLORS.white} size={22} />
+          </TouchableOpacity>
 
-  {/* OR Separator */}
-  <View style={styles.separatorContainer}>
-    <View style={styles.separator} />
-    <Text style={styles.orText}>OR</Text>
-    <View style={styles.separator} />
-  </View>
+          {/* OR Separator */}
+          <View style={styles.separatorContainer}>
+            <View style={styles.separator} />
+            <Text style={styles.orText}>OR</Text>
+            <View style={styles.separator} />
+          </View>
 
-  {/* Continue with Google */}
-  <TouchableOpacity style={styles.googleButton}>
-    <AntDesign name="google" size={22} color="#EA4335" />
-    <Text style={styles.googleText}>Continue with Google</Text>
-  </TouchableOpacity>
+          {/* Continue with Google */}
+          <TouchableOpacity style={styles.googleButton}>
+            <AntDesign name="google" size={22} color="#EA4335" />
+            <Text style={styles.googleText}>Continue with Google</Text>
+          </TouchableOpacity>
 
-  {/* Continue with Gmail */}
-  <TouchableOpacity style={[styles.googleButton, { marginTop: 15 }]}>
-    <AntDesign name="mail" size={22} color="#EA4335" />
-    <Text style={styles.googleText}>Continue with Gmail</Text>
-  </TouchableOpacity>
-</Animated.View>
-
-
+          {/* Continue with Gmail */}
+          <TouchableOpacity style={[styles.googleButton, { marginTop: 15 }]}>
+            <AntDesign name="mail" size={22} color="#EA4335" />
+            <Text style={styles.googleText}>Continue with Gmail</Text>
+          </TouchableOpacity>
+        </Animated.View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
