@@ -1,3 +1,8 @@
+
+
+
+
+
 import React, { useEffect, useRef, useState } from "react";
 import {
   View,
@@ -14,10 +19,16 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as Location from "expo-location";
 import { useDispatch, useSelector } from "react-redux";
+import { useNavigation } from "@react-navigation/native";
 import { setLocation } from "../redux/slices/locationSlice";
 import { addItem, incrementQty, decrementQty } from "../redux/slices/cartSlice";
 import { COLORS, SIZES, API_URL } from "../config/constants";
 import { Ionicons, Feather, Entypo } from "@expo/vector-icons";
+import { Alert } from "react-native";
+ import axios_api from "../config/axiosConfig";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { DeviceEventEmitter } from "react-native";
+
 
 const { width } = Dimensions.get("window");
 
@@ -40,7 +51,10 @@ function StoreItem({ item }) {
         <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
           <Text style={styles.storeName}>{item.shopName}</Text>
           <View
-            style={[styles.statusBadge, status === "OPEN" ? styles.statusOpen : styles.statusClosed]}
+            style={[
+              styles.statusBadge,
+              status === "OPEN" ? styles.statusOpen : styles.statusClosed,
+            ]}
           >
             <Text style={styles.statusText}>{status}</Text>
           </View>
@@ -68,11 +82,11 @@ function StoreItem({ item }) {
 }
 
 export default function HomeScreen() {
+  const navigation = useNavigation();
   const dispatch = useDispatch();
   const { address } = useSelector((state) => state.location);
   const cart = useSelector((state) => state.cart.items);
 
-  // ✅ Count only unique products, not qty sum
   const totalItems = Object.keys(cart).length;
 
   const [offers, setOffers] = useState([]);
@@ -81,11 +95,65 @@ export default function HomeScreen() {
   const [stores, setStores] = useState([]);
   const bannerRef = useRef(null);
 
-  const addToCart = (item) => dispatch(addItem(item));
+  
+const addToCart = async (item) => {
+  const stock =
+    item?.stock ??
+    item?.productId?.stock ??
+    item?.productId?.quantity ??
+    0;
+
+  if (stock === 0) {
+    Alert.alert("Out of stock", "This item is currently unavailable");
+    return;
+  }
+
+  try {
+    //  Add to backend cart
+    const token = await AsyncStorage.getItem("authToken");
+    if (!token) {
+      Alert.alert("Login Required", "Please login before adding to cart.");
+      return;
+    }
+
+    const productId = item._id || item?.productId?._id;
+    if (!productId) {
+      console.warn(" Product ID missing", item);
+      return;
+    }
+
+    const res = await axios_api.post(
+      "/api/cart/add",
+      { productId, quantity: 1 },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    console.log("🛒 Add to Cart API:", res.data);
+
+    //  Update Redux (your local cart)
+    dispatch(addItem(item));
+
+    //  Notify CartScreen to refresh
+    DeviceEventEmitter.emit("cartUpdated");
+  } catch (err) {
+    console.error("Add to Cart error:", err.response?.data || err.message);
+    Alert.alert("Error", "Unable to add item to cart.");
+  }
+};
+
   const increment = (id) => dispatch(incrementQty(id));
   const decrement = (id) => dispatch(decrementQty(id));
 
-  // ✅ Location
+  // helper safe navigation
+  const safeNavigate = (routeName, params) => {
+    try {
+      // attempt to navigate — if route doesn't exist this will throw
+      navigation.navigate(routeName, params);
+    } catch (err) {
+      console.warn(`Navigation target "${routeName}" not found.`, err);
+    }
+  };
+
   useEffect(() => {
     (async () => {
       let { status } = await Location.requestForegroundPermissionsAsync();
@@ -97,49 +165,68 @@ export default function HomeScreen() {
       if (geo.length > 0) {
         const a = geo[0];
         const fullAddress = [
-          a.name, a.street, a.district, a.city, a.subregion, a.region, a.postalCode, a.country
-        ].filter(Boolean).join(", ");
-
+          a.name,
+          a.street,
+          a.district,
+          a.city,
+          a.subregion,
+          a.region,
+          a.postalCode,
+          a.country,
+        ]
+          .filter(Boolean)
+          .join(", ");
         dispatch(setLocation(fullAddress));
       }
     })();
   }, []);
 
-  // ✅ API calls
   useEffect(() => {
     fetch(`${API_URL}/api/user/products/offers/exclusive`)
-      .then(res => res.json()).then(d => d.success && setOffers(d.offers));
+      .then((res) => res.json())
+      .then((d) => d.success && setOffers(d.offers))
+      .catch(() => setOffers([]));
   }, []);
 
   useEffect(() => {
     fetch(`${API_URL}/api/seller/products/best-selling`)
-      .then(res => res.json()).then(d => d.success && setBestSelling(d.products));
+      .then((res) => res.json())
+      .then((d) => d.success && setBestSelling(d.products))
+      .catch(() => setBestSelling([]));
   }, []);
 
   useEffect(() => {
     fetch(`${API_URL}/api/admin/all`)
-      .then(res => res.json()).then(d => d.success && setCategories(d.categories));
+      .then((res) => res.json())
+      .then((d) => d.success && setCategories(d.categories))
+      .catch(() => setCategories([]));
   }, []);
 
   useEffect(() => {
     fetch(`${API_URL}/apis/sellers`)
-      .then(res => res.json())
-      .then(d => {
+      .then((res) => res.json())
+      .then((d) => {
         if (d.success) {
           const filtered = d.sellers.filter(
-            s => !["lachi store", "lachi grocery"].includes(s.shopName?.toLowerCase())
+            (s) =>
+              !["lachi store", "lachi grocery"].includes(
+                s.shopName?.toLowerCase()
+              )
           );
           setStores(filtered);
         }
-      });
+      })
+      .catch(() => setStores([]));
   }, []);
 
-  // ✅ Banner Auto Slide
   useEffect(() => {
     let i = 0;
     const t = setInterval(() => {
       i = (i + 1) % banners.length;
-      bannerRef.current?.scrollToOffset({ offset: i * (width - 60), animated: true });
+      bannerRef.current?.scrollToOffset({
+        offset: i * (width - 60),
+        animated: true,
+      });
     }, 3000);
     return () => clearInterval(t);
   }, []);
@@ -151,11 +238,10 @@ export default function HomeScreen() {
 
   const renderProductCard = (item) => {
     const qty = cart[item._id]?.qty ?? 0;
-
     return (
       <View style={styles.offerCard}>
         <View style={{ position: "relative" }}>
-          <Image source={{ uri: item.image[0] }} style={styles.offerImage} />
+          <Image source={{ uri: item.image?.[0] }} style={styles.offerImage} />
           {!qty ? (
             <TouchableOpacity style={styles.addBtnOverImg} onPress={() => addToCart(item)}>
               <Text style={styles.addBtnOverImgText}>ADD</Text>
@@ -172,30 +258,18 @@ export default function HomeScreen() {
             </View>
           )}
         </View>
-
         <Text style={styles.offerName}>{item.name}</Text>
-        {item.originalPrice ? (
-          <View style={{ flexDirection: "row", alignItems: "center", marginTop: 4 }}>
-            <Text style={styles.offerPrice}>₹{item.price}</Text>
-            <Text style={styles.strikePrice}>₹{item.originalPrice}</Text>
-            {item.sellerDiscount > 0 && (
-              <Text style={styles.discountText}>{item.sellerDiscount}% OFF</Text>
-            )}
-          </View>
-        ) : (
-          <Text style={styles.offerPrice}>₹{item.price}</Text>
-        )}
+        <Text style={styles.offerPrice}>₹{item.price}</Text>
       </View>
     );
   };
 
   return (
     <SafeAreaView style={styles.safeArea}>
-
       {/* Header */}
       <View style={styles.headerContainer}>
         <View>
-          <Text style={styles.userName}>Hello, Jahnavi 👋</Text>
+          <Text style={styles.userName}>Hello, Sudha 👋</Text>
           <View style={styles.locationRow}>
             <Entypo name="location-pin" size={18} color={COLORS.primary} />
             <Text style={styles.locationText}>{address || "Fetching..."}</Text>
@@ -216,7 +290,6 @@ export default function HomeScreen() {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false}>
-
         {/* Banners */}
         <Animated.FlatList
           ref={bannerRef}
@@ -235,61 +308,50 @@ export default function HomeScreen() {
           )}
         />
 
-        {/* Exclusive */}
+        {/* Section header helper */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Exclusive Offers</Text>
-          <Text style={styles.seeAll}>See All</Text>
+          <TouchableOpacity
+            onPress={() => safeNavigate("Explore", { tab: "offers" })}
+          >
+            <Text style={styles.seeAll}>See All</Text>
+          </TouchableOpacity>
         </View>
-        <FlatList data={offers} horizontal renderItem={({ item }) => renderProductCard(item)} />
+
+        <FlatList
+          data={offers}
+          horizontal
+          renderItem={({ item }) => renderProductCard(item)}
+          keyExtractor={(i) => i._id || Math.random().toString()}
+          ListEmptyComponent={<Text style={{ padding: 16, color: "#888" }}>No offers</Text>}
+        />
 
         {/* Best Selling */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Best Selling</Text>
-          <Text style={styles.seeAll}>See All</Text>
+          <TouchableOpacity
+            onPress={() => safeNavigate("Explore", { tab: "best" })}
+          >
+            <Text style={styles.seeAll}>See All</Text>
+          </TouchableOpacity>
         </View>
 
         <FlatList
           data={bestSelling}
           horizontal
           keyExtractor={(i) => i._id}
-          renderItem={({ item }) => {
-            const qty = cart[item._id]?.qty ?? 0;
-
-            return (
-              <View style={styles.offerCard}>
-                <View style={{ position: "relative" }}>
-                  <Image source={{ uri: item.image[0] }} style={styles.offerImage} />
-
-                  {!qty ? (
-                    <TouchableOpacity style={styles.addBtnOverImg} onPress={() => addToCart(item)}>
-                      <Text style={styles.addBtnOverImgText}>ADD</Text>
-                    </TouchableOpacity>
-                  ) : (
-                    <View style={styles.qtyContainerOverImg}>
-                      <TouchableOpacity style={styles.qtyBtnSmall} onPress={() => decrement(item._id)}>
-                        <Text style={styles.qtyBtnTextSmall}>-</Text>
-                      </TouchableOpacity>
-
-                      <Text style={styles.qtyTextSmall}>{qty}</Text>
-
-                      <TouchableOpacity style={styles.qtyBtnSmall} onPress={() => increment(item._id)}>
-                        <Text style={styles.qtyBtnTextSmall}>+</Text>
-                      </TouchableOpacity>
-                    </View>
-                  )}
-                </View>
-
-                <Text style={styles.offerName}>{item.name}</Text>
-                <Text style={styles.offerPrice}>₹{item.price}</Text>
-              </View>
-            );
-          }}
+          renderItem={({ item }) => renderProductCard(item)}
+          ListEmptyComponent={<Text style={{ padding: 16, color: "#888" }}>No best sellers</Text>}
         />
 
         {/* Categories */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Categories</Text>
-          <Text style={styles.seeAll}>See All</Text>
+          <TouchableOpacity
+            onPress={() => safeNavigate("Explore", { tab: "categories" })}
+          >
+            <Text style={styles.seeAll}>See All</Text>
+          </TouchableOpacity>
         </View>
 
         <FlatList
@@ -302,24 +364,34 @@ export default function HomeScreen() {
               <Text style={styles.categoryRowText}>{item.name}</Text>
             </TouchableOpacity>
           )}
+          ListEmptyComponent={<Text style={{ padding: 16, color: "#888" }}>No categories</Text>}
         />
 
         {/* Stores */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Nearby Stores</Text>
-          <Text style={styles.seeAll}>See All</Text>
+          <TouchableOpacity
+            onPress={() => safeNavigate("Stores")} // try navigate to Stores screen if exists
+          >
+            <Text style={styles.seeAll}>See All</Text>
+          </TouchableOpacity>
         </View>
 
         <FlatList
           data={stores}
           scrollEnabled={false}
           renderItem={({ item }) => <StoreItem item={item} />}
+          keyExtractor={(i) => i._id}
+          ListEmptyComponent={<Text style={{ padding: 16, color: "#888" }}>No stores</Text>}
         />
       </ScrollView>
 
-      {/* ✅ Mini Cart Bubble */}
+      {/* Mini Cart Bubble */}
       {totalItems > 0 && (
-        <TouchableOpacity style={styles.viewCartBar} onPress={() => console.log("GO TO CART")}>
+        <TouchableOpacity
+          style={styles.viewCartBar}
+          onPress={() => safeNavigate("Cart")}
+        >
           <Ionicons name="cart-outline" size={18} color="#fff" style={{ marginRight: 6 }} />
           <Text style={styles.viewCartText}>View Cart • {totalItems} items</Text>
         </TouchableOpacity>
@@ -335,7 +407,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: SIZES.medium,
     paddingTop: 10,
   },
-
   headerContainer: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   userName: { fontSize: SIZES.large, fontWeight: "700" },
   locationRow: { flexDirection: "row", alignItems: "center" },
@@ -397,18 +468,6 @@ const styles = StyleSheet.create({
   },
   offerName: { fontSize: 14, fontWeight: "600", marginTop: 8 },
   offerPrice: { fontSize: 16, color: COLORS.primary, fontWeight: "700" },
-  strikePrice: {
-    fontSize: 12,
-    color: "#8e8e8e",
-    marginLeft: 6,
-    textDecorationLine: "line-through",
-  },
-  discountText: {
-    fontSize: 12,
-    marginLeft: 6,
-    fontWeight: "600",
-    color: "#10B981",
-  },
 
   addBtnOverImg: {
     position: "absolute",
@@ -469,14 +528,12 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     marginRight: 12,
   },
-
   categoryRowImage: {
     width: 72,
     height: 72,
     resizeMode: "contain",
     borderRadius: 12,
   },
-
   categoryRowText: {
     marginLeft: 14,
     fontWeight: "700",

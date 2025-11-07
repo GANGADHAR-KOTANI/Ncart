@@ -1,4 +1,4 @@
-// src/globalStyles.js
+
 import { StyleSheet } from "react-native";
 import { COLORS, SIZES } from "./config/constants";
 
@@ -7,6 +7,8 @@ const globalStyles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.white,
     padding: SIZES.medium,
+    paddingTop:40,
+    paddingBottom:30,
   },
   titleText: {
     fontSize: SIZES.xLarge,
@@ -28,6 +30,7 @@ const globalStyles = StyleSheet.create({
     color: COLORS.white,
     fontSize: SIZES.medium,
     fontWeight: "bold",
+    
   },
   input: {
     borderWidth: 1,

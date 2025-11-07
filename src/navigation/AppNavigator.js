@@ -1,16 +1,19 @@
+
 import React from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 
-// Screens
+//  Onboarding & Authentication Screens (Teammate flow)
 import SplashScreen from "../screens/SplashScreen";
 import GetStartedScreen from "../screens/GetStartedScreen";
 import FastestDeliveryScreen from "../screens/FastestDeliveryScreen";
 import ContactlessDeliveryScreen from "../screens/ContactlessDeliveryScreen";
 import EnterMobileScreen from "../screens/EnterMobileScreen";
 import VerifyOtpScreen from "../screens/VerifyOtpScreen";
-import HomeScreen from "../screens/HomeScreen"; // ✅ added
-import BottomTabNavigator from "./BottomTabNavigator"; // ✅ merged from jahnavi
+
+//  Main App Screens (Your tab navigation)
+import BottomTabNavigator from "./BottomTabNavigator"; // includes Home, Cart, etc.
+import HomeScreen from "../screens/HomeScreen"; // for direct reference if needed
 
 const Stack = createNativeStackNavigator();
 
@@ -23,6 +26,7 @@ export default function AppNavigator() {
           headerShown: false,
         }}
       >
+        {/*  Teammate’s onboarding flow */}
         <Stack.Screen name="Splash" component={SplashScreen} />
         <Stack.Screen name="GetStarted" component={GetStartedScreen} />
         <Stack.Screen
@@ -44,18 +48,18 @@ export default function AppNavigator() {
           options={{ animation: "slide_from_right" }}
         />
 
-        {/* ✅ Added HomeScreen after OTP verification */}
+        {/* Optional: Direct HomeScreen (if you ever want to test it standalone) */}
         <Stack.Screen
           name="HomeScreen"
           component={HomeScreen}
           options={{ animation: "slide_from_bottom" }}
         />
 
-        {/* ✅ Added BottomTabNavigator from teammate’s code */}
+        {/*  Main App after OTP verified (Bottom Tabs) */}
         <Stack.Screen
           name="MainTabs"
           component={BottomTabNavigator}
-          options={{ animation: "fade" }}
+          options={{ animation: "slide_from_bottom" }}
         />
       </Stack.Navigator>
     </NavigationContainer>
