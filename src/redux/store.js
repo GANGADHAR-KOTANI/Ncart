@@ -1,13 +1,25 @@
-// src/redux/store.js
 import { configureStore } from "@reduxjs/toolkit";
-import filterReducer from "./slices/filterSlice"; // ✅ from your branch
-import locationReducer from "./slices/locationSlice"; // ✅ from jahnavi branch
-import cartReducer from "./slices/cartSlice"; // ✅ from jahnavi branch
+import userReducer from "./slices/userSlice";
+import cartReducer from "./slices/cartSlice";
+import locationReducer from "./slices/locationSlice";
+import offersReducer from "./slices/offersSlice";
+import bestSellingReducer from "./slices/bestSellingSlice";
+import categoriesReducer from "./slices/categoriesSlice";
+import storesReducer from "./slices/storesSlice";
+// 👇 You likely forgot this import
+import filterReducer from "./slices/filterSlice";
 
 export const store = configureStore({
   reducer: {
-    filter: filterReducer,
-    location: locationReducer,
+    user: userReducer,
     cart: cartReducer,
+    location: locationReducer,
+    offers: offersReducer,
+    bestSelling: bestSellingReducer,
+    categories: categoriesReducer,
+    stores: storesReducer,
+    // ✅ Add this line
+    filter: filterReducer,
   },
 });
+ 

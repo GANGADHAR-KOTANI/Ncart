@@ -1,3 +1,4 @@
+// src/screens/HomeScreen.js
 import React, { useEffect, useRef, useState } from "react";
 import {
   View,
@@ -10,14 +11,22 @@ import {
   Dimensions,
   FlatList,
   ScrollView,
+  ActivityIndicator,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as Location from "expo-location";
 import { useDispatch, useSelector } from "react-redux";
 import { setLocation } from "../redux/slices/locationSlice";
-import { addItem, incrementQty, decrementQty } from "../redux/slices/cartSlice";
-import { COLORS, SIZES, API_URL } from "../config/constants";
+import { addToCart, removeFromCart, fetchCart } from "../redux/slices/cartSlice";
+import { fetchOffers } from "../redux/slices/offersSlice";
+import { fetchBestSelling } from "../redux/slices/bestSellingSlice";
+import { fetchCategories } from "../redux/slices/categoriesSlice";
+import { fetchStores } from "../redux/slices/storesSlice";
+import { fetchUserProfile } from "../redux/slices/userSlice";
+import { COLORS, SIZES } from "../config/constants";
 import { Ionicons, Feather, Entypo } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage"; // ✅ Added
 
 const { width } = Dimensions.get("window");
 
@@ -27,333 +36,368 @@ const banners = [
   require("../../assets/softdrinks.png"),
 ];
 
-function StoreItem({ item }) {
-  const distance = item.distance ?? "2 km";
-  const eta = item.eta ?? "5-8 Min";
-  const rating = typeof item.rating === "number" ? item.rating : 4.2;
-  const status = (item.status ?? "OPEN").toUpperCase();
-
-  return (
-    <TouchableOpacity style={styles.storeCard} activeOpacity={0.9}>
-      <Image source={{ uri: item.shopImage }} style={styles.storeTopImage} />
-      <View style={styles.storeDetails}>
-        <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-          <Text style={styles.storeName}>{item.shopName}</Text>
-          <View
-            style={[styles.statusBadge, status === "OPEN" ? styles.statusOpen : styles.statusClosed]}
-          >
-            <Text style={styles.statusText}>{status}</Text>
-          </View>
-        </View>
-
-        <Text style={styles.storeAddress}>{item.address}</Text>
-
-        <View style={styles.storeInfoRow}>
-          <View style={styles.infoPill}>
-            <Entypo name="location-pin" size={12} color={COLORS.primary} />
-            <Text style={styles.infoText}>{distance}</Text>
-          </View>
-          <View style={styles.infoPill}>
-            <Ionicons name="time-outline" size={12} color={COLORS.gray} />
-            <Text style={styles.infoText}>{eta}</Text>
-          </View>
-          <View style={styles.infoPill}>
-            <Text style={styles.ratingText}>★</Text>
-            <Text style={styles.infoText}>{rating.toFixed(1)}</Text>
-          </View>
-        </View>
-      </View>
-    </TouchableOpacity>
-  );
-}
-
-export default function HomeScreen() {
+export default function HomeScreen({ navigation }) {
   const dispatch = useDispatch();
   const { address } = useSelector((state) => state.location);
-  const cart = useSelector((state) => state.cart.items);
+  const user = useSelector((state) => state.user.profile);
+  const cartItems = useSelector((state) => state.cart.items);
+  const offers = useSelector((state) => state.offers.list);
+  const bestSelling = useSelector((state) => state.bestSelling.list);
+  const categories = useSelector((state) => state.categories.list);
+  const stores = useSelector((state) => state.stores.list);
 
-  // ✅ Count only unique products, not qty sum
-  const totalItems = Object.keys(cart).length;
-
-  const [offers, setOffers] = useState([]);
-  const [bestSelling, setBestSelling] = useState([]);
-  const [categories, setCategories] = useState([]);
-  const [stores, setStores] = useState([]);
   const bannerRef = useRef(null);
+  const [loadingLocation, setLoadingLocation] = useState(false);
+  const [totalItems, setTotalItems] = useState(0);
+  const [cartLoaded, setCartLoaded] = useState(false);
 
-  const addToCart = (item) => dispatch(addItem(item));
-  const increment = (id) => dispatch(incrementQty(id));
-  const decrement = (id) => dispatch(decrementQty(id));
-
-  // ✅ Location
+  // ✅ Load cart data once when app starts
   useEffect(() => {
-    (async () => {
-      let { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") return;
+    const loadCartData = async () => {
+      await dispatch(fetchCart());
+      setCartLoaded(true);
+    };
+    loadCartData();
+  }, [dispatch]);
 
-      const pos = await Location.getCurrentPositionAsync({});
-      const geo = await Location.reverseGeocodeAsync(pos.coords);
+  // ✅ Track and persist cart count
+ useEffect(() => {
+  // ✅ Use actual quantity from backend, fallback to 0 (not 1)
+  const count = cartItems.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+  setTotalItems(count);
 
-      if (geo.length > 0) {
-        const a = geo[0];
-        const fullAddress = [
-          a.name, a.street, a.district, a.city, a.subregion, a.region, a.postalCode, a.country
-        ].filter(Boolean).join(", ");
+  // Save synced total to AsyncStorage
+  AsyncStorage.setItem("cartCount", String(count));
+}, [cartItems]);
 
-        dispatch(setLocation(fullAddress));
+  // ✅ Restore persisted cart count (for UI during early load)
+  useEffect(() => {
+    const restoreCartCount = async () => {
+      const savedCount = await AsyncStorage.getItem("cartCount");
+      if (savedCount && parseInt(savedCount) > 0) {
+        setTotalItems(parseInt(savedCount));
+      } else {
+        setTotalItems(0);
       }
-    })();
+    };
+    restoreCartCount();
   }, []);
 
-  // ✅ API calls
+  // ✅ Initial data load
   useEffect(() => {
-    fetch(`${API_URL}/api/user/products/offers/exclusive`)
-      .then(res => res.json()).then(d => d.success && setOffers(d.offers));
+    let isMounted = true;
+    const loadData = async () => {
+      try {
+        await Promise.all([
+          dispatch(fetchUserProfile()),
+          dispatch(fetchOffers()),
+          dispatch(fetchBestSelling()),
+          dispatch(fetchCategories()),
+          dispatch(fetchStores()),
+        ]);
+        if (isMounted) fetchUserLocation();
+      } catch (err) {
+        console.error("Error loading data:", err);
+      }
+    };
+    loadData();
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
-  useEffect(() => {
-    fetch(`${API_URL}/api/seller/products/best-selling`)
-      .then(res => res.json()).then(d => d.success && setBestSelling(d.products));
-  }, []);
-
-  useEffect(() => {
-    fetch(`${API_URL}/api/admin/all`)
-      .then(res => res.json()).then(d => d.success && setCategories(d.categories));
-  }, []);
-
-  useEffect(() => {
-    fetch(`${API_URL}/apis/sellers`)
-      .then(res => res.json())
-      .then(d => {
-        if (d.success) {
-          const filtered = d.sellers.filter(
-            s => !["lachi store", "lachi grocery"].includes(s.shopName?.toLowerCase())
-          );
-          setStores(filtered);
-        }
-      });
-  }, []);
-
-  // ✅ Banner Auto Slide
   useEffect(() => {
     let i = 0;
-    const t = setInterval(() => {
+    const interval = setInterval(() => {
       i = (i + 1) % banners.length;
-      bannerRef.current?.scrollToOffset({ offset: i * (width - 60), animated: true });
+      bannerRef.current?.scrollToOffset({
+        offset: i * (width - 60),
+        animated: true,
+      });
     }, 3000);
-    return () => clearInterval(t);
+    return () => clearInterval(interval);
   }, []);
 
-  const getRandomColor = () => {
-    const arr = ["#FFF5E4", "#E8F8F5", "#FDEDEC", "#EBF5FB", "#FEF9E7", "#F4ECF7"];
-    return arr[Math.floor(Math.random() * arr.length)];
+  const fetchUserLocation = async () => {
+    try {
+      setLoadingLocation(true);
+      let { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Permission Denied", "Location access is needed to show nearby stores.");
+        dispatch(setLocation({ address: "Permission denied" }));
+        return;
+      }
+
+      const pos = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Highest,
+      });
+      const { latitude, longitude } = pos.coords;
+
+      const geo = await Location.reverseGeocodeAsync({ latitude, longitude });
+      const locationName = geo?.[0]
+        ? `${geo[0].name || ""}, ${geo[0].city || ""}, ${geo[0].region || ""}`
+        : "Unknown Location";
+
+      dispatch(setLocation({ address: locationName, latitude, longitude }));
+    } catch (err) {
+      console.error("Location error:", err);
+      dispatch(setLocation({ address: "Unable to fetch address" }));
+    } finally {
+      setLoadingLocation(false);
+    }
   };
 
-  const renderProductCard = (item) => {
-    const qty = cart[item._id]?.qty ?? 0;
+  const handleAdd = (id) => {
+    dispatch(addToCart(id));
+  };
+
+  const handleRemove = (id) => {
+    dispatch(removeFromCart(id));
+  };
+
+  const getQty = (id) => {
+    const found = cartItems.find((i) => i.productId === id || i._id === id);
+    return found ? found.quantity ?? 1 : 0;
+  };
+
+  const renderProduct = (item, type) => {
+    const qty = getQty(item._id);
+    const originalPrice = item.originalPrice ?? item.price ?? 0;
+    const discountedPrice = item.discountedPrice ?? item.price ?? 0;
+    const discountPercent = item.sellerDiscount ?? 0;
 
     return (
       <View style={styles.offerCard}>
-        <View style={{ position: "relative" }}>
-          <Image source={{ uri: item.image[0] }} style={styles.offerImage} />
-          {!qty ? (
-            <TouchableOpacity style={styles.addBtnOverImg} onPress={() => addToCart(item)}>
-              <Text style={styles.addBtnOverImgText}>ADD</Text>
-            </TouchableOpacity>
-          ) : (
-            <View style={styles.qtyContainerOverImg}>
-              <TouchableOpacity style={styles.qtyBtnSmall} onPress={() => decrement(item._id)}>
-                <Text style={styles.qtyBtnTextSmall}>-</Text>
+        <View style={styles.imageWrapper}>
+          <Image source={{ uri: String(item.image?.[0]) }} style={styles.offerImage} />
+          {/* ✅ Always show +/– if item already in cart after reload */}
+          {cartLoaded && qty > 0 ? (
+            <View style={styles.qtyContainer}>
+              <TouchableOpacity onPress={() => handleRemove(item._id)}>
+                <Text style={styles.qtyBtn}>-</Text>
               </TouchableOpacity>
-              <Text style={styles.qtyTextSmall}>{qty}</Text>
-              <TouchableOpacity style={styles.qtyBtnSmall} onPress={() => increment(item._id)}>
-                <Text style={styles.qtyBtnTextSmall}>+</Text>
+              <Text style={styles.qtyText}>{qty}</Text>
+              <TouchableOpacity onPress={() => handleAdd(item._id)}>
+                <Text style={styles.qtyBtn}>+</Text>
               </TouchableOpacity>
             </View>
+          ) : (
+            <TouchableOpacity style={styles.addBtn} onPress={() => handleAdd(item._id)}>
+              <Text style={styles.addBtnText}>ADD</Text>
+            </TouchableOpacity>
           )}
         </View>
 
-        <Text style={styles.offerName}>{item.name}</Text>
-        {item.originalPrice ? (
-          <View style={{ flexDirection: "row", alignItems: "center", marginTop: 4 }}>
-            <Text style={styles.offerPrice}>₹{item.price}</Text>
-            <Text style={styles.strikePrice}>₹{item.originalPrice}</Text>
-            {item.sellerDiscount > 0 && (
-              <Text style={styles.discountText}>{item.sellerDiscount}% OFF</Text>
-            )}
-          </View>
+        <Text style={styles.offerName} numberOfLines={2}>
+          {item.name ?? "Unnamed Product"}
+        </Text>
+
+        {type === "exclusive" && discountPercent > 0 ? (
+          <>
+            <View style={styles.priceRow}>
+              <Text style={styles.discountTag}>-{discountPercent}% OFF</Text>
+            </View>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              {discountedPrice !== originalPrice && (
+                <Text style={styles.strikePrice}>₹{originalPrice}</Text>
+              )}
+              <Text style={styles.offerPrice}>₹{discountedPrice}</Text>
+            </View>
+          </>
         ) : (
-          <Text style={styles.offerPrice}>₹{item.price}</Text>
+          <Text style={styles.offerPrice}>₹{item.price ?? 0}</Text>
         )}
       </View>
     );
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
+      <View style={styles.greenHeader}>
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.userName}>Hello, {user?.name ? user.name : "User"} 👋</Text>
 
-      {/* Header */}
-      <View style={styles.headerContainer}>
-        <View>
-          <Text style={styles.userName}>Hello, Jahnavi 👋</Text>
-          <View style={styles.locationRow}>
-            <Entypo name="location-pin" size={18} color={COLORS.primary} />
-            <Text style={styles.locationText}>{address || "Fetching..."}</Text>
+            <TouchableOpacity style={styles.locationRow} onPress={fetchUserLocation} activeOpacity={0.8}>
+              <Entypo name="location-pin" size={18} color="#fff" />
+              {loadingLocation ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={styles.locationText} numberOfLines={1}>
+                  {address || "Fetching location..."}
+                </Text>
+              )}
+            </TouchableOpacity>
           </View>
+          <Ionicons name="person-circle-outline" size={45} color="#fff" />
         </View>
-        <Ionicons name="person-circle-outline" size={45} color={COLORS.primary} />
+
+        {/* Search bar */}
+        <View style={styles.searchRow}>
+          <View style={styles.searchBar}>
+            <Feather name="search" size={20} color={COLORS.gray} />
+            <TextInput
+              placeholder="Search grocery items..."
+              placeholderTextColor="#999"
+              style={styles.searchInput}
+            />
+          </View>
+          <TouchableOpacity
+            style={styles.filterBtn}
+            onPress={() => navigation.navigate("FilterScreen")}
+          >
+            <Ionicons name="options-outline" size={22} color="#fff" />
+          </TouchableOpacity>
+        </View>
       </View>
 
-      {/* Search */}
-      <View style={styles.searchContainer}>
-        <View style={styles.searchBar}>
-          <Feather name="search" size={20} color={COLORS.gray} />
-          <TextInput placeholder="Search grocery items..." style={styles.searchInput} />
-        </View>
-        <TouchableOpacity style={styles.filterButton}>
-          <Ionicons name="options-outline" size={22} color="#fff" />
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView showsVerticalScrollIndicator={false}>
-
-        {/* Banners */}
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        style={styles.scrollArea}
+        contentContainerStyle={{ paddingBottom: 100 }}
+      >
         <Animated.FlatList
           ref={bannerRef}
           data={banners}
           horizontal
           showsHorizontalScrollIndicator={false}
-          snapToAlignment="start"
-          decelerationRate="fast"
           snapToInterval={width - 60}
-          contentContainerStyle={{ paddingLeft: 10 }}
-          ItemSeparatorComponent={() => <View style={{ width: 12 }} />}
+          decelerationRate="fast"
           renderItem={({ item }) => (
             <View style={{ width: width - 60 }}>
-              <Image source={item} style={styles.bannerImage} />
+              <Image source={item} style={styles.banner} />
             </View>
           )}
+          ItemSeparatorComponent={() => <View style={{ width: 12 }} />}
         />
 
-        {/* Exclusive */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Exclusive Offers</Text>
-          <Text style={styles.seeAll}>See All</Text>
-        </View>
-        <FlatList data={offers} horizontal renderItem={({ item }) => renderProductCard(item)} />
-
-        {/* Best Selling */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Best Selling</Text>
-          <Text style={styles.seeAll}>See All</Text>
-        </View>
-
-        <FlatList
+        <Section
+          title="Exclusive Offers"
+          data={offers}
+          render={(item) => renderProduct(item, "exclusive")}
+          onSeeAll={() => navigation.navigate("OffersScreen")}
+        />
+        <Section
+          title="Best Selling"
           data={bestSelling}
-          horizontal
-          keyExtractor={(i) => i._id}
-          renderItem={({ item }) => {
-            const qty = cart[item._id]?.qty ?? 0;
-
-            return (
-              <View style={styles.offerCard}>
-                <View style={{ position: "relative" }}>
-                  <Image source={{ uri: item.image[0] }} style={styles.offerImage} />
-
-                  {!qty ? (
-                    <TouchableOpacity style={styles.addBtnOverImg} onPress={() => addToCart(item)}>
-                      <Text style={styles.addBtnOverImgText}>ADD</Text>
-                    </TouchableOpacity>
-                  ) : (
-                    <View style={styles.qtyContainerOverImg}>
-                      <TouchableOpacity style={styles.qtyBtnSmall} onPress={() => decrement(item._id)}>
-                        <Text style={styles.qtyBtnTextSmall}>-</Text>
-                      </TouchableOpacity>
-
-                      <Text style={styles.qtyTextSmall}>{qty}</Text>
-
-                      <TouchableOpacity style={styles.qtyBtnSmall} onPress={() => increment(item._id)}>
-                        <Text style={styles.qtyBtnTextSmall}>+</Text>
-                      </TouchableOpacity>
-                    </View>
-                  )}
-                </View>
-
-                <Text style={styles.offerName}>{item.name}</Text>
-                <Text style={styles.offerPrice}>₹{item.price}</Text>
-              </View>
-            );
-          }}
+          render={(item) => renderProduct(item, "bestselling")}
+          onSeeAll={() => navigation.navigate("BestSellingScreen")}
         />
-
-        {/* Categories */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Categories</Text>
-          <Text style={styles.seeAll}>See All</Text>
-        </View>
-
-        <FlatList
-          data={categories}
-          horizontal
-          keyExtractor={(i) => i._id}
-          renderItem={({ item }) => (
-            <TouchableOpacity style={[styles.categoryRowCard, { backgroundColor: getRandomColor() }]}>
-              <Image source={{ uri: item.image }} style={styles.categoryRowImage} />
-              <Text style={styles.categoryRowText}>{item.name}</Text>
-            </TouchableOpacity>
-          )}
-        />
-
-        {/* Stores */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Nearby Stores</Text>
-          <Text style={styles.seeAll}>See All</Text>
-        </View>
-
-        <FlatList
-          data={stores}
-          scrollEnabled={false}
-          renderItem={({ item }) => <StoreItem item={item} />}
-        />
+        <CategorySection data={categories} />
+        <StoreSection stores={stores} />
       </ScrollView>
 
-      {/* ✅ Mini Cart Bubble */}
+      {/* ✅ Show cart only when 1 or more items exist */}
       {totalItems > 0 && (
-        <TouchableOpacity style={styles.viewCartBar} onPress={() => console.log("GO TO CART")}>
-          <Ionicons name="cart-outline" size={18} color="#fff" style={{ marginRight: 6 }} />
-          <Text style={styles.viewCartText}>View Cart • {totalItems} items</Text>
+        <TouchableOpacity
+          style={styles.cartBtn}
+          onPress={() => navigation.navigate("CartScreen")}
+          activeOpacity={0.9}
+        >
+          <Ionicons name="cart-outline" size={18} color="#fff" />
+          <Text style={styles.cartText}>View Cart • {totalItems} items</Text>
         </TouchableOpacity>
       )}
     </SafeAreaView>
   );
 }
 
+/* ---------- Reusable Components ---------- */
+const Section = ({ title, data, render, onSeeAll }) => (
+  <>
+    <View style={styles.sectionHeader}>
+      <Text style={styles.sectionTitle}>{title}</Text>
+      <TouchableOpacity onPress={onSeeAll}>
+        <Text style={styles.seeAll}>See All</Text>
+      </TouchableOpacity>
+    </View>
+    <FlatList
+      data={data}
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      renderItem={({ item }) => render(item)}
+      keyExtractor={(item, index) => index.toString()}
+      contentContainerStyle={{ paddingVertical: 6 }}
+    />
+  </>
+);
+
+const CategorySection = ({ data }) => (
+  <>
+    <View style={styles.sectionHeader}>
+      <Text style={styles.sectionTitle}>Categories</Text>
+      <TouchableOpacity>
+        <Text style={styles.seeAll}>See All</Text>
+      </TouchableOpacity>
+    </View>
+    <FlatList
+      data={data}
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      renderItem={({ item }) => (
+        <TouchableOpacity activeOpacity={0.8} style={styles.categoryCard}>
+          <Image source={{ uri: String(item.image) }} style={styles.categoryImage} />
+          <Text style={styles.categoryText}>{item.name ?? "Unknown"}</Text>
+        </TouchableOpacity>
+      )}
+    />
+  </>
+);
+
+const StoreSection = ({ stores }) => (
+  <>
+    <View style={styles.sectionHeader}>
+      <Text style={styles.sectionTitle}>Nearby Stores</Text>
+      <TouchableOpacity>
+        <Text style={styles.seeAll}>See All</Text>
+      </TouchableOpacity>
+    </View>
+    {stores.map((s, i) => (
+      <TouchableOpacity key={i} style={styles.storeCard}>
+        <Image source={{ uri: String(s.shopImage) }} style={styles.storeImage} />
+        <Text style={styles.storeName}>{s.shopName ?? "Unnamed Store"}</Text>
+        <View style={styles.storeLocationRow}>
+          <Entypo name="location-pin" size={13} color={COLORS.primary} />
+          <Text style={styles.storeLocation}>{s.location ?? "Unknown"}</Text>
+        </View>
+        <View style={{ flexDirection: "row", alignItems: "center", marginTop: 4 }}>
+          <Text style={styles.storeStar}>★</Text>
+          <Text style={styles.storeRating}>{s.rating ?? "4.2"}</Text>
+        </View>
+      </TouchableOpacity>
+    ))}
+  </>
+);
+
+
+
+/* ---------- Styles ---------- */
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: "#fff",
+  safeArea: { flex: 1, backgroundColor: "#22C55E" },
+  greenHeader: {
+    backgroundColor: "#22C55E",
     paddingHorizontal: SIZES.medium,
-    paddingTop: 10,
+    paddingTop: 16,
+    paddingBottom: 20,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
   },
-
-  headerContainer: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  userName: { fontSize: SIZES.large, fontWeight: "700" },
-  locationRow: { flexDirection: "row", alignItems: "center" },
-  locationText: { marginLeft: 4, fontSize: 13, color: "#6B7280", flexShrink: 1 },
-
-  searchContainer: { flexDirection: "row", marginTop: 12 },
+  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  userName: { fontSize: 20, fontWeight: "700", color: "#fff" },
+  locationRow: { flexDirection: "row", alignItems: "center", marginTop: 4 },
+  locationText: { marginLeft: 4, color: "#fff", maxWidth: 230, fontSize: 13 },
+  searchRow: { flexDirection: "row", marginTop: 12 },
   searchBar: {
     flex: 1,
     flexDirection: "row",
-    backgroundColor: "#F3F4F6",
+    backgroundColor: "#fff",
     borderRadius: 12,
-    paddingHorizontal: 12,
-    height: 48,
+    paddingHorizontal: 10,
     alignItems: "center",
   },
-  searchInput: { flex: 1, marginLeft: 8, fontSize: 14 },
-  filterButton: {
-    backgroundColor: COLORS.primary,
+  searchInput: { flex: 1, marginLeft: 6, color: "#000" },
+  filterBtn: {
+    backgroundColor: "#15803D",
     width: 48,
     height: 48,
     borderRadius: 12,
@@ -361,186 +405,117 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginLeft: 10,
   },
-
-  bannerImage: {
-    width: "100%",
-    height: 165,
-    borderRadius: 14,
-    resizeMode: "cover",
-    marginTop: 16,
-  },
-
+  scrollArea: { backgroundColor: "#fff", paddingHorizontal: SIZES.medium },
+  banner: { width: "100%", height: 165, borderRadius: 14, marginVertical: 16 },
   sectionHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginTop: 20,
+    marginTop: 10,
   },
   sectionTitle: { fontSize: 18, fontWeight: "700" },
-  seeAll: { fontSize: 13, fontWeight: "600", color: COLORS.primary },
-
+  seeAll: { fontSize: 13, color: COLORS.primary },
   offerCard: {
-    backgroundColor: "#fff",
     width: 150,
-    borderRadius: 14,
     padding: 10,
-    marginRight: 12,
+    marginRight: 10,
     borderWidth: 0.5,
     borderColor: "#E5E7EB",
-  },
-  offerImage: {
-    width: "100%",
-    height: 110,
-    borderRadius: 10,
-    resizeMode: "contain",
-    backgroundColor: "#fff",
-  },
-  offerName: { fontSize: 14, fontWeight: "600", marginTop: 8 },
-  offerPrice: { fontSize: 16, color: COLORS.primary, fontWeight: "700" },
-  strikePrice: {
-    fontSize: 12,
-    color: "#8e8e8e",
-    marginLeft: 6,
-    textDecorationLine: "line-through",
-  },
-  discountText: {
-    fontSize: 12,
-    marginLeft: 6,
-    fontWeight: "600",
-    color: "#10B981",
-  },
-
-  addBtnOverImg: {
-    position: "absolute",
-    bottom: 6,
-    right: 6,
-    backgroundColor: "#09B44D",
-    paddingVertical: 4,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    zIndex: 10,
-  },
-  addBtnOverImgText: {
-    color: "#fff",
-    fontWeight: "700",
-    fontSize: 12,
-  },
-  qtyContainerOverImg: {
-    position: "absolute",
-    bottom: 6,
-    right: 6,
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#09B44D",
-    paddingHorizontal: 6,
-    paddingVertical: 4,
-    borderRadius: 8,
-    zIndex: 10,
-  },
-  qtyBtnSmall: {
-    width: 20,
-    height: 20,
-    borderRadius: 4,
-    backgroundColor: "#fff",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  qtyBtnTextSmall: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#09B44D",
-  },
-  qtyTextSmall: {
-    paddingHorizontal: 6,
-    color: "#fff",
-    fontSize: 14,
-    fontWeight: "700",
-  },
-
-  categoryRowCard: {
-    flexDirection: "row",
-    paddingVertical: 18,
-    paddingHorizontal: 20,
-    borderRadius: 18,
-    width: 215,
-    height: 100,
-    alignItems: "center",
-    justifyContent: "flex-start",
-    overflow: "hidden",
-    marginRight: 12,
-  },
-
-  categoryRowImage: {
-    width: 72,
-    height: 72,
-    resizeMode: "contain",
     borderRadius: 12,
+    backgroundColor: "#fff",
   },
-
-  categoryRowText: {
-    marginLeft: 14,
+  imageWrapper: { position: "relative" },
+  offerImage: { width: "100%", height: 100, borderRadius: 10 },
+  offerName: { fontWeight: "600", marginTop: 6, fontSize: 14 },
+  offerPrice: { color: COLORS.primary, fontWeight: "700", fontSize: 16 },
+  priceRow: { flexDirection: "row", alignItems: "center", marginTop: 4 },
+  discountTag: {
+    backgroundColor: "#F87171",
+    color: "#fff",
+    fontSize: 11,
     fontWeight: "700",
-    fontSize: 16,
-    flexShrink: 1,
-    color: "#000",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    alignSelf: "flex-start",
   },
-
+  strikePrice: {
+    textDecorationLine: "line-through",
+    color: "#9CA3AF",
+    marginRight: 6,
+    fontSize: 13,
+  },
+  addBtn: {
+    position: "absolute",
+    bottom: 6,
+    right: 6,
+    backgroundColor: COLORS.primary,
+    borderRadius: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+  },
+  addBtnText: { color: "#fff", fontWeight: "700" },
+  qtyContainer: {
+    position: "absolute",
+    bottom: 6,
+    right: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: COLORS.primary,
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+  },
+  qtyBtn: { color: "#fff", fontSize: 16, fontWeight: "700", paddingHorizontal: 6 },
+  qtyText: { color: "#fff", fontSize: 14, fontWeight: "700" },
+  categoryCard: {
+    flexDirection: "row",
+    backgroundColor: "#F9FAFB",
+    borderRadius: 18,
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginRight: 10,
+  },
+  categoryImage: { width: 60, height: 60, borderRadius: 12, resizeMode: "contain" },
+  categoryText: { fontSize: 15, fontWeight: "700", marginLeft: 10 },
   storeCard: {
     backgroundColor: "#fff",
     borderRadius: 14,
-    marginBottom: 16,
-    overflow: "hidden",
+    marginVertical: 8,
+    padding: 10,
+    borderWidth: 0.3,
+    borderColor: "#E5E7EB",
   },
-  storeTopImage: { width: "100%", height: 145, resizeMode: "cover" },
-  storeDetails: { padding: 10 },
-  storeName: { fontSize: 15, fontWeight: "700" },
-  storeAddress: { fontSize: 12, marginTop: 5, color: "#6B7280" },
-  storeInfoRow: { flexDirection: "row", alignItems: "center", marginTop: 8 },
-  infoPill: {
-    flexDirection: "row",
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    backgroundColor: "#F3F4F6",
+  storeImage: {
+    width: "100%",
+    height: 145,
     borderRadius: 12,
-    marginRight: 6,
+    resizeMode: "cover",
+    marginBottom: 6,
   },
-  infoText: { fontSize: 11, marginLeft: 4, color: "#4B5563" },
-  ratingText: { fontSize: 12, marginRight: 4, color: "#F59E0B" },
-  statusBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
-  statusOpen: { backgroundColor: "#DCFCE7" },
-  statusClosed: { backgroundColor: "#FEE2E2" },
-  statusText: { fontSize: 11, fontWeight: "700" },
-
-  viewCartBar: {
+  storeName: { fontSize: 16, fontWeight: "700", color: "#111827" },
+  storeLocationRow: { flexDirection: "row", alignItems: "center", marginTop: 2 },
+  storeLocation: {
+    fontSize: 12,
+    color: "#6B7280",
+    marginLeft: 2,
+    flexShrink: 1,
+    maxWidth: "90%",
+  },
+  storeStar: { fontSize: 13, color: "#F59E0B", marginRight: 3 },
+  storeRating: { fontSize: 13, color: "#111827", fontWeight: "600" },
+  cartBtn: {
     position: "absolute",
     bottom: 20,
-    right: 100,
-    backgroundColor: COLORS.primary,
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 30,
+    alignSelf: "center",
     flexDirection: "row",
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 30,
     alignItems: "center",
-    justifyContent: "center",
-    zIndex: 999,
-    shadowColor: "#000",
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 2,
+    elevation: 4,
   },
-  viewCartText: {
-    color: "#fff",
-    fontSize: 13,
-    fontWeight: "600",
-    letterSpacing: 0.3,
-  },
-
-  locationText: {
-    marginLeft: 2,
-    fontSize: 13,
-    color: "#6B7280",
-    flexShrink: 1,
-    maxWidth: 200,
-  },
+  cartText: { color: "#fff", fontWeight: "700", marginLeft: 6, fontSize: 14 },
 });

@@ -1,3 +1,4 @@
+// src/screens/VerifyOtpScreen.js
 import React, { useRef, useState } from "react";
 import {
   View,
@@ -7,43 +8,89 @@ import {
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
+  ActivityIndicator,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { COLORS } from "../config/constants";
+import { COLORS, API_URL } from "../config/constants";
 import globalStyles from "../globalStyles";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useRoute } from "@react-navigation/native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useDispatch } from "react-redux";
+import { setToken, fetchUserProfile } from "../redux/slices/userSlice";
 
-export default function VerifyOtp() {
+export default function VerifyOtpScreen() {
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
+  const [loading, setLoading] = useState(false);
   const inputs = useRef([]);
-  const navigation = useNavigation(); // ✅ added navigation hook
+  const navigation = useNavigation();
+  const route = useRoute();
+  const dispatch = useDispatch();
+  const { phone } = route.params;
 
+  /** 🔢 Handle OTP input */
   const handleChange = (text, index) => {
     if (/^\d*$/.test(text)) {
       const newOtp = [...otp];
       newOtp[index] = text;
       setOtp(newOtp);
-
-      // Move focus
-      if (text && index < 5) {
-        inputs.current[index + 1].focus();
-      }
+      if (text && index < 5) inputs.current[index + 1].focus();
     }
   };
 
   const handleBackspace = (text, index) => {
-    if (text === "" && index > 0) {
-      inputs.current[index - 1].focus();
-    }
+    if (text === "" && index > 0) inputs.current[index - 1].focus();
   };
 
-  const handleVerify = () => {
+  /** ✅ Verify OTP */
+  const handleVerify = async () => {
     const enteredOtp = otp.join("");
-    if (enteredOtp.length === 6) {
-      alert("OTP Verified Successfully 🎉");
-      navigation.replace("HomeScreen"); // ✅ navigate to HomeScreen
-    } else {
-      alert("Please enter the complete OTP");
+    if (enteredOtp.length !== 6)
+      return Alert.alert("Invalid OTP", "Please enter a 6-digit code.");
+
+    try {
+      setLoading(true);
+      const res = await fetch(`${API_URL}/api/user/verify-otp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone, otp: enteredOtp }),
+      });
+
+      const data = await res.json();
+      setLoading(false);
+
+      if (res.ok && data.success) {
+        // 🧩 CASE 1: Existing user → backend gives token
+        if (data.token) {
+          await AsyncStorage.setItem("token", data.token);
+          dispatch(setToken(data.token));
+
+          // ✅ Fetch latest user profile immediately
+          await dispatch(fetchUserProfile()).unwrap().catch(() => {});
+
+         // reset to the tab navigator. MainTabs should have HomeScreen as default tab.
+navigation.reset({
+  index: 0,
+  routes: [{ name: "MainTabs", params: { screen: "Home", params: { phone, isNewUser: true } } }],
+});
+
+        }
+        // 🧩 CASE 2: New user → show name/email overlay
+        else if (data.isNewUser) {
+          navigation.reset({
+            index: 0,
+            routes: [{ name: "HomeScreen", params: { phone, isNewUser: true } }],
+          });
+        } else {
+          Alert.alert("Error", "Unexpected response. Please try again.");
+        }
+      } else {
+        Alert.alert("Error", data.message || "OTP verification failed.");
+      }
+    } catch (error) {
+      setLoading(false);
+      console.log("OTP Verify Error:", error);
+      Alert.alert("Error", "Something went wrong. Please try again.");
     }
   };
 
@@ -53,13 +100,10 @@ export default function VerifyOtp() {
         style={styles.wrapper}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
-        {/* 🧾 Heading */}
         <Text style={[globalStyles.titleText, styles.heading]}>
           Enter your OTP
         </Text>
-        <Text style={styles.subText}>
-          We’ve sent a 6-digit code to your number
-        </Text>
+        <Text style={styles.subText}>We’ve sent a 6-digit code to {phone}</Text>
 
         {/* 🔘 OTP Inputs */}
         <View style={styles.otpContainer}>
@@ -83,12 +127,16 @@ export default function VerifyOtp() {
         <TouchableOpacity
           style={[
             styles.verifyButton,
-            { opacity: otp.join("").length === 6 ? 1 : 0.6 },
+            { opacity: otp.join("").length === 6 && !loading ? 1 : 0.6 },
           ]}
           onPress={handleVerify}
-          disabled={otp.join("").length !== 6}
+          disabled={otp.join("").length !== 6 || loading}
         >
-          <Text style={styles.verifyText}>Verify OTP</Text>
+          {loading ? (
+            <ActivityIndicator color={COLORS.white} />
+          ) : (
+            <Text style={styles.verifyText}>Verify OTP</Text>
+          )}
         </TouchableOpacity>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -96,9 +144,7 @@ export default function VerifyOtp() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    justifyContent: "center",
-  },
+  safeArea: { justifyContent: "center" },
   wrapper: {
     flex: 1,
     alignItems: "center",
@@ -115,8 +161,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginBottom: 40,
   },
-
-  /** OTP Boxes */
   otpContainer: {
     flexDirection: "row",
     justifyContent: "center",
@@ -124,7 +168,6 @@ const styles = StyleSheet.create({
     width: "80%",
     marginBottom: 50,
   },
-
   otpBox: {
     width: 50,
     height: 50,
@@ -141,8 +184,6 @@ const styles = StyleSheet.create({
     elevation: 2,
     marginHorizontal: 5,
   },
-
-  /** Button */
   verifyButton: {
     width: "80%",
     backgroundColor: COLORS.primary,
