@@ -10,11 +10,7 @@ export const fetchStoresByCategory = createAsyncThunk(
         `https://selecto-project.onrender.com/apis/category/${encodeURIComponent(category)}/sellers`
       );
 
-      // Log to confirm backend data structure
       console.log("Fetched stores for", category, ":", response.data);
-
-      // ✅ Adjust this based on actual backend response shape
-      // Many APIs return { sellers: [...] } or { data: [...] } or even the array directly
       return response.data?.sellers || response.data || [];
     } catch (error) {
       console.error("Error fetching stores:", error);

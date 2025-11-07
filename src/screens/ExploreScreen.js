@@ -33,7 +33,7 @@ export default function ExploreScreen() {
 
   // Local filtering (case-insensitive, starts with search letters)
   const filteredCategories = categories.filter((item) =>
-    item.name?.toLowerCase().startsWith(searchText.toLowerCase())
+    item.name?.toLowerCase().includes(searchText.toLowerCase())
 
   );
 
@@ -89,9 +89,8 @@ export default function ExploreScreen() {
                   dispatch(setSelectedCategory(item.name));
                   await dispatch(fetchStoresByCategory(item.name));
                   navigation.navigate("CategoryStoreScreen");
-                }}
-
-              >
+                }}>
+                  
                 <Image source={{ uri: item.image }} style={styles.categoryImage} />
                 <Text style={styles.categoryName}>{item.name}</Text>
               </TouchableOpacity>

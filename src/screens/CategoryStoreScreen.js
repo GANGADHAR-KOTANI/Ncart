@@ -58,10 +58,12 @@ export default function CategoryStoreScreen() {
               <View style={styles.topRow}>
                 <View style={styles.storeInfo}>
                   <Text style={styles.storeName}>{item.shopName}</Text>
+
+                  {/* Address Section (Replacing Coordinates) */}
                   <View style={styles.locationRow}>
                     <Feather name="map-pin" size={14} color="#FF4D4D" />
                     <Text style={styles.location}>
-                      {item.location?.coordinates?.join(", ") || "Location"}
+                      {item.address || "No address available"}
                     </Text>
                   </View>
                 </View>
@@ -99,7 +101,6 @@ export default function CategoryStoreScreen() {
                       <Text style={styles.productName} numberOfLines={1}>
                         {product.name}
                       </Text>
-                      {/* ✅ Product Price */}
                       <Text style={styles.productPrice}>
                         ₹{product.price || "—"}
                       </Text>
@@ -164,16 +165,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#000",
   },
-  locationRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 4,
-  },
-  location: {
-    fontSize: 13,
-    color: "#555",
-    marginLeft: 4,
-  },
   shopImage: {
     width: width * 0.38,
     height: width * 0.24,
@@ -196,7 +187,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#F4F8F4",
     borderRadius: 10,
     borderWidth: 0.5,
-    borderColor: "#E0E0E0", 
+    borderColor: "#E0E0E0",
     shadowColor: "transparent",
     elevation: 0,
     paddingVertical: 5,
@@ -239,5 +230,15 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 16,
     color: "red",
+  },
+  locationRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 4,
+  },
+  location: {
+    fontSize: 13,
+    color: "#555",
+    marginLeft: 4,
   },
 });
