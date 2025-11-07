@@ -45,11 +45,11 @@ export default function AppNavigator() {
         />
 
         {/* ✅ Added HomeScreen after OTP verification */}
-        <Stack.Screen
+        {/* <Stack.Screen
           name="HomeScreen"
           component={HomeScreen}
           options={{ animation: "slide_from_bottom" }}
-        />
+        /> */}
 
         {/* ✅ Added BottomTabNavigator from teammate’s code */}
         <Stack.Screen

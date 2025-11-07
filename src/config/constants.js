@@ -7,13 +7,17 @@ export const COLORS = {
   gray: "#7f8c8d",
   lightGray: "#ecf0f1",
   danger: "#e74c3c",
+
+  
 };
 
 export const FONT = {
+
   regular: "System",
   medium: "System",
   bold: "System",
 };
+
 
 export const SIZES = {
   base: 8,

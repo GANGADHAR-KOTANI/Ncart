@@ -1,4 +1,4 @@
-// src/redux/store.js
+
 import { configureStore } from "@reduxjs/toolkit";
 import filterReducer from "./slices/filterSlice"; // ✅ from your branch
 import locationReducer from "./slices/locationSlice"; // ✅ from jahnavi branch
@@ -11,3 +11,4 @@ export const store = configureStore({
     cart: cartReducer,
   },
 });
+
