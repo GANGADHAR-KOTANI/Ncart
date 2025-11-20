@@ -1,16 +1,30 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import { API_URL } from "../../config/constants";
+import axios from "axios";
 
-export const fetchCategories = createAsyncThunk("categories/fetch", async () => {
-  const res = await fetch(`${API_URL}/api/admin/all`);
-  const data = await res.json();
-  if (!data.success) throw new Error("Failed to fetch categories");
-  return data.categories;
-});
+export const fetchCategories = createAsyncThunk(
+  "categories/fetch",
+  async (search = "") => {
+    try {
+      const url = search
+        ? `https://selecto-project.onrender.com/api/user/categories?search=${search}`
+        : "https://selecto-project.onrender.com/api/admin/all";
 
-const categoriesSlice = createSlice({
+      const response = await axios.get(url);
+     
+      return response.data.categories || [];
+    } catch (error) {
+      throw Error(error.response?.data?.message || "Failed to fetch categories");
+    }
+  }
+);
+
+const categorySlice = createSlice({
   name: "categories",
-  initialState: { list: [], status: "idle", error: null },
+  initialState: {
+    items: [],
+    status: "idle",
+    error: null,
+  },
   reducers: {},
   extraReducers: (builder) => {
     builder
@@ -19,7 +33,7 @@ const categoriesSlice = createSlice({
       })
       .addCase(fetchCategories.fulfilled, (state, action) => {
         state.status = "succeeded";
-        state.list = action.payload;
+        state.items = action.payload;
       })
       .addCase(fetchCategories.rejected, (state, action) => {
         state.status = "failed";
@@ -28,4 +42,4 @@ const categoriesSlice = createSlice({
   },
 });
 
-export default categoriesSlice.reducer;
+export default categorySlice.reducer;

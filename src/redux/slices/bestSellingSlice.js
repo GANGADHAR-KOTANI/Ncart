@@ -1,3 +1,4 @@
+// src/redux/slices/bestSellingSlice.js
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import { API_URL } from "../../config/constants";
 
@@ -5,7 +6,15 @@ export const fetchBestSelling = createAsyncThunk("bestSelling/fetch", async () =
   const res = await fetch(`${API_URL}/api/seller/products/best-selling`);
   const data = await res.json();
   if (!data.success) throw new Error("Failed to fetch best selling");
-  return data.products;
+
+  // ✅ adapt for relatedProducts structure
+  const formatted = (data.relatedProducts || []).map((item) => ({
+    ...item,
+    originalPrice: item.originalPrice || item.price,
+    discountedPrice: item.discountedPrice || item.price,
+  }));
+
+  return formatted;
 });
 
 const bestSellingSlice = createSlice({

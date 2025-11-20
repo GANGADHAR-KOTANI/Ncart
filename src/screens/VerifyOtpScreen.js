@@ -1,4 +1,3 @@
-// src/screens/VerifyOtpScreen.js
 import React, { useRef, useState } from "react";
 import {
   View,
@@ -16,8 +15,6 @@ import { COLORS, API_URL } from "../config/constants";
 import globalStyles from "../globalStyles";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useDispatch } from "react-redux";
-import { setToken, fetchUserProfile } from "../redux/slices/userSlice";
 
 export default function VerifyOtpScreen() {
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
@@ -25,10 +22,8 @@ export default function VerifyOtpScreen() {
   const inputs = useRef([]);
   const navigation = useNavigation();
   const route = useRoute();
-  const dispatch = useDispatch();
   const { phone } = route.params;
 
-  /** 🔢 Handle OTP input */
   const handleChange = (text, index) => {
     if (/^\d*$/.test(text)) {
       const newOtp = [...otp];
@@ -42,7 +37,6 @@ export default function VerifyOtpScreen() {
     if (text === "" && index > 0) inputs.current[index - 1].focus();
   };
 
-  /** ✅ Verify OTP */
   const handleVerify = async () => {
     const enteredOtp = otp.join("");
     if (enteredOtp.length !== 6)
@@ -60,37 +54,43 @@ export default function VerifyOtpScreen() {
       setLoading(false);
 
       if (res.ok && data.success) {
-        // 🧩 CASE 1: Existing user → backend gives token
-        if (data.token) {
-          await AsyncStorage.setItem("token", data.token);
-          dispatch(setToken(data.token));
+  if (data.isNewUser) {
+  // New user does NOT have token yet
+  console.log("NEW USER → Waiting for register token");
 
-          // ✅ Fetch latest user profile immediately
-          await dispatch(fetchUserProfile()).unwrap().catch(() => {});
+  navigation.reset({
+    index: 0,
+    routes: [{ name: "HomeScreen", params: { phone, isNewUser: true } }],
+  });
+}
 
-         // reset to the tab navigator. MainTabs should have HomeScreen as default tab.
-navigation.reset({
-  index: 0,
-  routes: [{ name: "MainTabs", params: { screen: "Home", params: { phone, isNewUser: true } } }],
-});
 
-        }
-        // 🧩 CASE 2: New user → show name/email overlay
-        else if (data.isNewUser) {
-          navigation.reset({
-            index: 0,
-            routes: [{ name: "HomeScreen", params: { phone, isNewUser: true } }],
-          });
-        } else {
-          Alert.alert("Error", "Unexpected response. Please try again.");
-        }
-      } else {
+ else if (data.token) {
+  await AsyncStorage.setItem("token", data.token);
+
+  // 🔥 SAME FIX for existing user
+  await new Promise(res => setTimeout(res, 50));
+
+  console.log("TOKEN SAVED:", data.token);
+
+  navigation.reset({
+    index: 0,
+    routes: [{ name: "MainTabs", params: { screen: "Shop" } }],
+  });
+
+}
+ else {
+    Alert.alert("Error", "Unexpected response. Please try again.");
+  }
+}
+
+      else {
         Alert.alert("Error", data.message || "OTP verification failed.");
       }
     } catch (error) {
       setLoading(false);
-      console.log("OTP Verify Error:", error);
       Alert.alert("Error", "Something went wrong. Please try again.");
+      console.log("OTP Verify Error:", error);
     }
   };
 
@@ -100,12 +100,9 @@ navigation.reset({
         style={styles.wrapper}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
-        <Text style={[globalStyles.titleText, styles.heading]}>
-          Enter your OTP
-        </Text>
+        <Text style={[globalStyles.titleText, styles.heading]}>Enter your OTP</Text>
         <Text style={styles.subText}>We’ve sent a 6-digit code to {phone}</Text>
 
-        {/* 🔘 OTP Inputs */}
         <View style={styles.otpContainer}>
           {otp.map((digit, index) => (
             <TextInput
@@ -123,7 +120,6 @@ navigation.reset({
           ))}
         </View>
 
-        {/* ✅ Verify Button */}
         <TouchableOpacity
           style={[
             styles.verifyButton,
@@ -145,22 +141,9 @@ navigation.reset({
 
 const styles = StyleSheet.create({
   safeArea: { justifyContent: "center" },
-  wrapper: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  heading: {
-    color: COLORS.primary,
-    fontWeight: "700",
-    fontSize: 22,
-    marginBottom: 8,
-  },
-  subText: {
-    color: "#777",
-    fontSize: 14,
-    marginBottom: 40,
-  },
+  wrapper: { flex: 1, alignItems: "center", justifyContent: "center" },
+  heading: { color: COLORS.primary, fontWeight: "700", fontSize: 22, marginBottom: 8 },
+  subText: { color: "#777", fontSize: 14, marginBottom: 40 },
   otpContainer: {
     flexDirection: "row",
     justifyContent: "center",
@@ -190,15 +173,6 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
     borderRadius: 12,
     alignItems: "center",
-    justifyContent: "center",
-    shadowColor: COLORS.primary,
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    elevation: 4,
   },
-  verifyText: {
-    color: COLORS.white,
-    fontSize: 16,
-    fontWeight: "600",
-  },
+  verifyText: { color: COLORS.white, fontSize: 16, fontWeight: "600" },
 });

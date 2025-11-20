@@ -1,3 +1,4 @@
+// src/redux/slices/offersSlice.js
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import { API_URL } from "../../config/constants";
 
@@ -7,9 +8,9 @@ export const fetchOffers = createAsyncThunk("offers/fetchOffers", async () => {
   const data = await res.json();
   if (!data.success) throw new Error("Failed to fetch offers");
 
-  const formattedOffers = data.offers.map((item) => {
+  const formattedOffers = (data.relatedOffers || []).map((item) => {
     const originalPrice = item.originalPrice || item.price;
-    const price = item.price || originalPrice;
+    const price = item.discountedPrice || item.price || originalPrice;
     const sellerDiscount =
       item.sellerDiscount ??
       Math.round(((originalPrice - price) / originalPrice) * 100);
@@ -17,7 +18,7 @@ export const fetchOffers = createAsyncThunk("offers/fetchOffers", async () => {
     return {
       ...item,
       originalPrice,
-      price,
+      discountedPrice: price,
       sellerDiscount: sellerDiscount > 0 ? sellerDiscount : 0,
     };
   });

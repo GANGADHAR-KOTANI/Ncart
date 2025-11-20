@@ -1,4 +1,3 @@
-// src/screens/EnterNameScreen.js
 import React, { useState } from "react";
 import {
   View,
@@ -11,13 +10,16 @@ import {
 } from "react-native";
 import { COLORS, API_URL } from "../config/constants";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useNavigation } from "@react-navigation/native";
+import getToken from "../utils/getToken";
 import { useDispatch } from "react-redux";
-import { setToken, fetchUserProfile } from "../redux/slices/userSlice";
+import { fetchProfile } from "../redux/slices/profileSlice";
 
 export default function EnterNameScreen({ phone, onComplete }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
+  const navigation = useNavigation();
   const dispatch = useDispatch();
 
   const handleSave = async () => {
@@ -28,37 +30,48 @@ export default function EnterNameScreen({ phone, onComplete }) {
 
     try {
       setLoading(true);
+
+      const token = await getToken();
+
       const res = await fetch(`${API_URL}/api/user/register`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: token ? `Bearer ${token}` : "",
+        },
         body: JSON.stringify({ phone, name, email }),
       });
 
       const data = await res.json();
       setLoading(false);
+if (res.ok && data.success) {
 
-      if (res.ok && data.success) {
-        const token = data.token;
-        if (!token) {
-          Alert.alert("Error", "No token received from server");
-          return;
-        }
+    // ⭐ Save token returned from register API
+    if (data.token) {
+      await AsyncStorage.setItem("token", data.token);
+      await new Promise(r => setTimeout(r, 50));
+      console.log("REGISTER TOKEN SAVED:", data.token);
+    }
 
-        // ✅ Save token + fetch fresh profile
-        await AsyncStorage.setItem("token", token);
-        dispatch(setToken(token));
+    // ⭐ Now fetch the profile using the real token
+    await dispatch(fetchProfile());
 
-        // Fetch new user's profile immediately
-        await dispatch(fetchUserProfile()).unwrap().catch(() => {});
+    // close popup
+    onComplete();
 
-        onComplete(); // hide overlay
-      } else {
+    // navigate to MainTabs
+    navigation.reset({
+      index: 0,
+      routes: [{ name: "MainTabs", params: { screen: "Shop" } }],
+    });
+}
+ else {
         Alert.alert("Error", data.message || "Registration failed");
       }
     } catch (error) {
       setLoading(false);
       Alert.alert("Error", "Something went wrong. Please try again.");
-      console.error(error);
+      console.error("Register Error:", error);
     }
   };
 
