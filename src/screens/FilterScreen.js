@@ -76,7 +76,7 @@ export default function FilterScreen({ navigation }) {
       )}
 
       {/* Price Filter */}
-      <Text style={[styles.sectionTitle, { marginTop: 30 }]}>Price</Text>
+      <Text style={[styles.sectionTitle, { marginTop: 5 }]}>Price</Text>
       <View style={styles.sliderContainer}>
         <Slider
           minimumValue={0}
@@ -92,14 +92,20 @@ export default function FilterScreen({ navigation }) {
       </View>
 
       {/* Apply Button */}
-      <View style={styles.bottomButtonContainer}>
-        <TouchableOpacity
-          style={styles.applyButton}
-          onPress={() => alert("Filters applied!")}
-        >
-          <Text style={styles.applyButtonText}>Apply Filter</Text>
-        </TouchableOpacity>
-      </View>
+      <TouchableOpacity
+  style={styles.applyButton}
+  onPress={() =>
+    navigation.navigate("CategoryStoreScreen", {
+      filters: {
+        category: selectedCategory,
+        maxPrice: price,
+      },
+    })
+  }
+>
+  <Text style={styles.applyButtonText}>Apply Filter</Text>
+</TouchableOpacity>
+
     </SafeAreaView>
   );
 }
@@ -126,7 +132,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
   },
   sliderContainer: {
-    marginVertical: 10,
+    marginVertical: 1,
     paddingHorizontal: 10,
   },
   priceValue: {

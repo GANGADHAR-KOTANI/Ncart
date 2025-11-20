@@ -2,223 +2,268 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_URL } from "../../config/constants";
+import getToken from "../../utils/getToken";   // ✅ Use universal token getter
 
-/**
- * Build authorization header using either state token or AsyncStorage token.
- */
-const getAuthHeader = async (getState) => {
-  const token = getState().user?.token || (await AsyncStorage.getItem("token"));
-  if (!token) throw new Error("No token found");
-
-  return {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${token}`,
-  };
-};
-
-/**
- * Normalizes many possible backend shapes into:
- * [
- *   {
- *     productId: string,
- *     quantity: number,
- *     product: { _id, name, price, image, ... } // optional product details
- *   },
- *   ...
- * ]
- */
-const normalizeCart = (data) => {
-  if (!data) return [];
-
-  // If backend already returns array of normalized items
-  let rawItems = [];
-
-  if (Array.isArray(data)) rawItems = data;
-  else if (data.items && Array.isArray(data.items)) rawItems = data.items;
-  else if (data.cart && Array.isArray(data.cart)) rawItems = data.cart;
-  else if (data.cart && data.cart.items && Array.isArray(data.cart.items))
-    rawItems = data.cart.items;
-  else if (data.items && data.items.data && Array.isArray(data.items.data))
-    rawItems = data.items.data;
-  else {
-    // If it's an object representing single item
-    rawItems = [data];
-  }
-
-  // Map raw items to stable shape
-  const items = rawItems
-    .map((it) => {
-      if (!it) return null;
-
-      // Try to find product details and id
-      const productObj =
-        it.product ||
-        it.productDetail ||
-        it.product_info ||
-        (it.productId && it.product) ||
-        it.item ||
-        null;
-
-      const productId =
-        (it.productId && String(it.productId)) ||
-        (productObj && (productObj._id || productObj.id)) ||
-        it._id ||
-        it.id ||
-        null;
-
-      const quantity =
-        Number(
-          it.quantity ??
-            it.qty ??
-            it.count ??
-            (it.quantity && it.quantity.count) ??
-            0
-        ) || 0;
-
-      // product-level fallback properties (name, price, images)
-      const product = {
-        _id: productId,
-        name: productObj?.name ?? it.name ?? productObj?.title ?? undefined,
-        price: productObj?.price ?? it.price ?? productObj?.cost ?? undefined,
-        image:
-          productObj?.image ??
-          productObj?.images ??
-          it.image ??
-          it.images ??
-          (Array.isArray(productObj?.images) ? productObj.images[0] : undefined),
-        raw: productObj ?? it,
-      };
-
-      if (!productId) return null;
-
-      return {
-        productId,
-        quantity: quantity > 0 ? quantity : 1, // default to 1 if server didn't give quantity
-        product,
-      };
-    })
-    .filter(Boolean);
-
-  return items;
-};
-
-/* ---------- Thunks ---------- */
-
+// 🔹 Fetch entire cart
 export const fetchCart = createAsyncThunk(
   "cart/fetchCart",
-  async (_, { getState, rejectWithValue }) => {
+  async (_, { rejectWithValue }) => {
     try {
-      const headers = await getAuthHeader(getState);
-      const res = await fetch(`${API_URL}/api/cart/`, { headers });
+      const token = await getToken();   // ✅ unified token
+      if (!token) throw new Error("No token found");
+
+      const res = await fetch(`${API_URL}/api/cart/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
       const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed to fetch cart");
 
-      if (res.ok && data.success) {
-        return normalizeCart(data.cart || data);
-      }
-
-      throw new Error(data.message || "Failed to fetch cart");
+      return data.cart;
     } catch (err) {
       return rejectWithValue(err.message);
     }
   }
 );
 
-/**
- * addToCart: backend expected to increment item quantity (by 1) or add the product.
- * We pass productId (string). Server returns updated cart.
- */
+// 🔹 Add to cart
 export const addToCart = createAsyncThunk(
   "cart/addToCart",
-  async (productId, { getState, rejectWithValue }) => {
+  async ({ productId }, { rejectWithValue }) => {
     try {
-      const headers = await getAuthHeader(getState);
+      const token = await getToken();   // ✅ unified token
+      if (!token) throw new Error("No token found");
+
       const res = await fetch(`${API_URL}/api/cart/add`, {
         method: "POST",
-        headers,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ productId }),
       });
+
       const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed to add item");
 
-      if (res.ok && data.success) {
-        return normalizeCart(data.cart || data);
-      }
-
-      throw new Error(data.message || "Failed to add item");
+      return data.cart;
     } catch (err) {
       return rejectWithValue(err.message);
     }
   }
 );
 
-/**
- * removeFromCart: backend expected to decrement qty by 1 or remove item if qty becomes 0
- * We pass productId (string). Server returns updated cart.
- */
+// 🔹 Remove one quantity
 export const removeFromCart = createAsyncThunk(
   "cart/removeFromCart",
-  async (productId, { getState, rejectWithValue }) => {
+  async ({ productId }, { rejectWithValue }) => {
     try {
-      const headers = await getAuthHeader(getState);
+      const token = await getToken();   // ✅ unified token
+      if (!token) throw new Error("No token found");
+
       const res = await fetch(`${API_URL}/api/cart/remove`, {
         method: "POST",
-        headers,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ productId }),
       });
+
       const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed to remove item");
 
-      if (res.ok && data.success) {
-        return normalizeCart(data.cart || data);
-      }
-
-      throw new Error(data.message || "Failed to remove item");
+      return data.cart;
     } catch (err) {
       return rejectWithValue(err.message);
     }
   }
 );
 
-/* ---------- Slice ---------- */
+// 🔹 Delete one cart item permanently
+export const deleteCartItem = createAsyncThunk(
+  "cart/deleteCartItem",
+  async ({ productId }, { rejectWithValue, dispatch }) => {
+    try {
+      const token = await getToken();   // ✅ unified token
+      if (!token) throw new Error("No token found");
 
+      const res = await fetch(`${API_URL}/api/cart/delete`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ productId }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed to delete item");
+
+      await dispatch(fetchCart());
+      return data.cart;
+    } catch (err) {
+      console.error("❌ deleteCartItem failed:", err.message);
+      return rejectWithValue(err.message);
+    }
+  }
+);
+
+// 🔹 Clear entire cart
+export const clearCart = createAsyncThunk(
+  "cart/clearCart",
+  async (_, { rejectWithValue, dispatch }) => {
+    try {
+      const token = await getToken();   // ✅ unified token
+      if (!token) throw new Error("No token found");
+
+      const res = await fetch(`${API_URL}/api/cart/clear`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const rawText = await res.text();
+      console.log("🧾 clearCart raw response:", rawText);
+
+      let data;
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        throw new Error(
+          `Invalid JSON from server. Raw: ${rawText.slice(0, 80)}...`
+        );
+      }
+
+      if (!res.ok) throw new Error(data.message || "Failed to clear cart");
+
+      await AsyncStorage.removeItem("cart");
+      await AsyncStorage.removeItem("cartItems");
+
+      dispatch({ type: "cart/clearLocal" });
+      await dispatch(fetchCart());
+
+      return { sellers: [], totalPrice: 0, cartItemCount: 0 };
+    } catch (err) {
+      console.error("❌ clearCart failed:", err.message);
+      return rejectWithValue(err.message);
+    }
+  }
+);
+
+// ------------------ SLICE ------------------
 const cartSlice = createSlice({
   name: "cart",
   initialState: {
-    items: [],
+    sellers: [],
+    totalPrice: 0,
+    cartItemCount: 0,
     loading: false,
     error: null,
   },
+
   reducers: {
-    // optional local-only helpers (not used now)
-    clearCartLocal: (state) => {
-      state.items = [];
+    localIncrement: (state, action) => {
+      const productId = action.payload.productId;
+      for (const seller of state.sellers) {
+        for (const item of seller.items) {
+          if (item.productId?._id === productId) {
+            item.quantity += 1;
+            item.total = item.quantity * item.productId.price;
+          }
+        }
+      }
+      state.cartItemCount += 1;
+      state.totalPrice = state.sellers.reduce(
+        (sum, s) => sum + s.items.reduce((t, i) => t + i.total, 0),
+        0
+      );
+    },
+
+    localDecrement: (state, action) => {
+      const productId = action.payload.productId;
+      for (const seller of state.sellers) {
+        for (const item of seller.items) {
+          if (item.productId?._id === productId && item.quantity > 1) {
+            item.quantity -= 1;
+            item.total = item.quantity * item.productId.price;
+            state.cartItemCount -= 1;
+          }
+        }
+      }
+      state.totalPrice = state.sellers.reduce(
+        (sum, s) => sum + s.items.reduce((t, i) => t + i.total, 0),
+        0
+      );
+    },
+
+    localDelete: (state, action) => {
+      const id = action.payload.cartItemId;
+      for (const seller of state.sellers) {
+        seller.items = seller.items.filter((i) => i.productId?._id !== id);
+      }
+      state.sellers = state.sellers.filter((s) => s.items.length > 0);
+
+      let total = 0;
+      let count = 0;
+      for (const s of state.sellers) {
+        s.sellerTotal = s.items.reduce((sum, i) => sum + i.total, 0);
+        total += s.sellerTotal;
+        count += s.items.reduce((sum, i) => sum + i.quantity, 0);
+      }
+      state.totalPrice = total;
+      state.cartItemCount = count;
+    },
+
+    clearLocal: (state) => {
+      state.sellers = [];
+      state.totalPrice = 0;
+      state.cartItemCount = 0;
+      state.error = null;
+      state.loading = false;
     },
   },
+
   extraReducers: (builder) => {
     builder
       .addCase(fetchCart.fulfilled, (state, action) => {
-        state.items = normalizeCart(action.payload);
+        if (action.payload?.sellers?.length) {
+          state.sellers = action.payload.sellers;
+          state.totalPrice = action.payload.totalPrice;
+          state.cartItemCount = action.payload.cartItemCount;
+        } else {
+          state.sellers = [];
+          state.totalPrice = 0;
+          state.cartItemCount = 0;
+        }
       })
       .addCase(addToCart.fulfilled, (state, action) => {
-        state.items = normalizeCart(action.payload);
+        if (action.payload?.sellers) {
+          state.sellers = action.payload.sellers;
+          state.totalPrice = action.payload.totalPrice;
+          state.cartItemCount = action.payload.cartItemCount;
+        }
       })
       .addCase(removeFromCart.fulfilled, (state, action) => {
-        state.items = normalizeCart(action.payload);
-      })
-      .addMatcher((action) => action.type.endsWith("/pending"), (state) => {
-        state.loading = true;
-        state.error = null;
-      })
-      .addMatcher((action) => action.type.endsWith("/fulfilled"), (state) => {
-        state.loading = false;
-      })
-      .addMatcher(
-        (action) => action.type.endsWith("/rejected"),
-        (state, action) => {
-          state.loading = false;
-          state.error = action.payload || action.error?.message;
+        if (action.payload?.sellers) {
+          state.sellers = action.payload.sellers;
+          state.totalPrice = action.payload.totalPrice;
+          state.cartItemCount = action.payload.cartItemCount;
         }
-      );
+      })
+      .addCase(clearCart.fulfilled, (state) => {
+        state.sellers = [];
+        state.totalPrice = 0;
+        state.cartItemCount = 0;
+        state.loading = false;
+        state.error = null;
+      });
   },
 });
 
-export const { clearCartLocal } = cartSlice.actions;
+export const { localIncrement, localDecrement, localDelete, clearLocal } =
+  cartSlice.actions;
+
 export default cartSlice.reducer;
